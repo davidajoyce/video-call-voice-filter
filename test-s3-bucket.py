@@ -55,16 +55,26 @@ def s3_file_paths():
 		file_name_split_list.append([file_name_split])
 	#for file_name_split in file_name_split_list:
 	#	print(file_wav_dict[file_name_split])
+	'''
 	spk1, spk2 = random.sample(file_name_split_list, 2)
 	print('spk1',spk1)
 	print('spk2',spk2)
 	s1_dvec = random.sample(spk1, 2)
 	print('s1_dvec', s1_dvec)
+	'''
 
 def output_s3_file():
 	downloadS3File()
 	object_name = 'output/911-130578-0020-norm.wav'
 	client.upload_file(FILE_NAME, BUCKET_NAME, object_name)
+
+def testS3fs():
+	fs = s3fs.S3FileSystem(anon=False)
+	train_folders = [x for x in fs.glob('voicefilterdataset/train-clean-100/*')]
+	print(train_folders)
+	train_spk = [fs.glob(os.path.join(spk, '**', '*-norm.wav')) for spk in train_folders]
+	print(train_spk[0])
+	print(train_spk[1])
 
 if __name__ == "__main__":
 	main()
@@ -72,3 +82,4 @@ if __name__ == "__main__":
 	process_s3_objects()
 	s3_file_paths()
 	output_s3_file()
+	testS3fs()
