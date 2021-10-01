@@ -7,6 +7,8 @@ import librosa
 import argparse
 import numpy as np
 import boto3
+import s3fs
+import soundfile
 from multiprocessing import Pool, cpu_count
 
 from utils.audio import Audio
@@ -17,7 +19,7 @@ BUCKET_NAME = 'voicefilterdataset'
 s3_client = boto3.client('s3')
 s3 = boto3.resource('s3')
 bucket = s3.Bucket('voicefilterdataset')
-
+fs = s3fs.S3FileSystem(anon=False)
 
 def formatter(dir_, form, num):
     return os.path.join(dir_, form.replace('*', '%06d' % num))
@@ -69,8 +71,10 @@ def mix(hp, args, audio, num, s1_dvec, s1_target, s2, train):
     # save vad & normalized wav files
     target_wav_path = formatter(dir_, hp.form.target.wav, num)
     mixed_wav_path = formatter(dir_, hp.form.mixed.wav, num)
-    librosa.output.write_wav(target_wav_path, w1, srate)
-    librosa.output.write_wav(mixed_wav_path, mixed, srate)
+    #librosa.output.write_wav(target_wav_path, w1, srate)
+    soundfile.write(target_wav_path, w1, srate)
+    #librosa.output.write_wav(mixed_wav_path, mixed, srate)
+    soundfile.write(mixed_wav_path, mixed, srate)
 
     upload_to_s3(target_wav_path)
     upload_to_s3(mixed_wav_path)
@@ -92,7 +96,10 @@ def mix(hp, args, audio, num, s1_dvec, s1_target, s2, train):
     os.remove(target_wav_path)
     os.remove(mixed_wav_path)
 
-def download_S3File(wav_key_name, file_name):
+def download_S3File(file_name, wav_key_name):
+    #print('BUCKET_NAME', BUCKET_NAME)
+    #print('wav_key_name', wav_key_name)
+    #print('file_name', file_name)
     s3_client.download_file(BUCKET_NAME, wav_key_name, file_name)
 
 def delete_local_file(file_name):
@@ -124,7 +131,18 @@ def wav_file_keys_from_s3Bucket():
     return wav_files
 
 def upload_to_s3(file_path):
-    s3_client.upload(file_path, BUCKET_NAME, file_path)
+    s3_client.upload_file(file_path, BUCKET_NAME, file_path)
+
+def fileNameFromPath(file_path):
+    return file_path.split('/')[-1]
+
+def train_folders_from_S3():
+    train_folders = [x for x in fs.glob('voicefilterdataset/train-clean-100/*')]
+    return train_folders
+
+def train_spk_from_s3_train_folders(train_folders):
+    train_spk = [fs.glob(os.path.join(spk, '**', '*-norm.wav')) for spk in train_folders]
+    return train_spk
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -180,29 +198,35 @@ if __name__ == '__main__':
     test_spk = [x for x in test_spk if len(x) >= 2]
     '''
 
+    train_folders = train_folders_from_S3()
+    train_spk = train_spk_from_s3_train_folders(train_folders)
+
     audio = Audio(hp)
 
 
     def train_wrapper(num):
         wav_file_names = wav_files_names()
         wav_file_name_and_path_dict = wav_file_name_and_paths()
-        #spk1, spk2 = random.sample(train_spk, 2)
+        spk1, spk2 = random.sample(train_spk, 2)
         #print(wav_file_names)
-        spk1 = random.sample(wav_file_names, 2)
+        #spk1 = random.sample(wav_file_names, 2)
         #print('spk1')
-        spk2 = random.sample(wav_file_names, 2)
-        print(spk1)
+        #spk2 = random.sample(wav_file_names, 2)
+        #print(spk1)
         s1_dvec, s1_target = random.sample(spk1, 2)
         #print('s1_dvec')
-        print(s1_dvec)
+        #print(s1_dvec)
         s2 = random.choice(spk2)
         #TODO: make a dic that has the filename as key and wav_key_name as value 
-        print(s1_dvec)
-        print(s1_target)
-        download_S3File(s1_dvec, wav_file_name_and_path_dict[s1_dvec])
-        download_S3File(s1_target, wav_file_name_and_path_dict[s1_target])
-        download_S3File(s2, wav_file_name_and_path_dict[s2])
-        mix(hp, args, audio, num, s1_dvec, s1_target, s2, train=True)
+        #print(s1_dvec)
+        #print(s1_target)
+        s1_dvec_file_name = fileNameFromPath(s1_dvec)
+        s1_target_file_name = fileNameFromPath(s1_target)
+        s2_file_name = fileNameFromPath(s2)
+        download_S3File(s1_dvec_file_name, wav_file_name_and_path_dict[s1_dvec_file_name])
+        download_S3File(s1_target_file_name, wav_file_name_and_path_dict[s1_target_file_name])
+        download_S3File(s2_file_name, wav_file_name_and_path_dict[s2_file_name])
+        mix(hp, args, audio, num, s1_dvec_file_name, s1_target_file_name, s2_file_name, train=True)
 
     def test_wrapper(num):
         spk1, spk2 = random.sample(test_spk, 2)
